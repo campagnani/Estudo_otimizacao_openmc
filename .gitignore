@@ -1,3 +1,9 @@
+*.log
+*.err
+*.h5
+*.png
+.vscode
+
 # Prerequisites
 *.d
 

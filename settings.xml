@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<settings>
+  <run_mode>eigenvalue</run_mode>
+  <particles>100000</particles>
+  <batches>440</batches>
+  <inactive>40</inactive>
+  <source particle="neutron" strength="1.0" type="independent">
+    <space type="point">
+      <parameters>0.0 0.0 0.0</parameters>
+    </space>
+  </source>
+  <output>
+    <tallies>false</tallies>
+  </output>
+  <create_delayed_neutrons>true</create_delayed_neutrons>
+</settings>
