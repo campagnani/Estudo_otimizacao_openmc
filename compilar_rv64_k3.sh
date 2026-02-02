@@ -131,10 +131,12 @@ function tente_compilar_tudo() {
         CORE=X100
         VLEN=256
         CACHE_PARAMS="--param=l1-cache-size=64 --param=l1-cache-line-size=64 --param=l2-cache-size=1024"
+        TUNE="" #"-mtune=native" Não funciona no K3 no GCC atual
     elif [ "$CORE_NUM" -ge 8 ] && [ "$CORE_NUM" -le 15 ]; then
         CORE=A100
         VLEN=1024
-        CACHE_PARAMS="--param=l1-cache-size=32 --param=l1-cache-line-size=64 --param=l2-cache-size=256 --param=max-unroll-times=2"
+        CACHE_PARAMS="--param=l1-cache-size=32 --param=l1-cache-line-size=64 --param=l2-cache-size=256"
+        TUNE="" #"-mtune=native" Não funciona no K3 no GCC atual
     else
         echo "Erro: Core desconhecido '$CORE_NUM'. Use X100 ou A100."
         exit 1
@@ -142,39 +144,61 @@ function tente_compilar_tudo() {
 
     echo "--- Hardware Detectado: SpacemiT K3 $CORE ---"
     echo "VLEN        : $VLEN bits"
-    echo "Tuning      : $TUNE"
+    echo "Tuning      : "
     echo "Cache Setup : $CACHE_PARAMS"
     echo "=========================================="
 
-    ADDITIONAL_EXT="zicbom_zawrs_zfh_zvfh_zvkg_zvkned_zvknha_zvknhb_zvksed_zvksh_zvkt"
+    ADDITIONAL_EXT="zicbom_zawrs_zfh_zvfh_zvkg_zvkned_zvknha_zvknhb_zvksed_zvksh_zvkt_zvfbfwma"
     ISA_BASE_noV="rv64gc_zba_zbb_zbc_zbs_zfa_zicond_zicboz_zca_zcb_zcd_$ADDITIONAL_EXT"
     ISA_BASE_V="rv64gcv_zba_zbb_zbc_zbs_zfa_zicond_zicboz_zca_zcb_zcd_zvbb_zvbc_zvkb_$ADDITIONAL_EXT"
 
     VEC="-mrvv-vector-bits=zvl"
     ABI="-mabi=lp64d"
     #OTI="-flto=auto ...
-    OTI="-flto -fno-plt -DNDEBUG -fno-math-errno -funroll-loops -fno-trapping-math -fno-signaling-nans -fno-signed-zeros -freciprocal-math -Wno-psabi"
-    TUNE="" #"-mtune=native"
+    OTI="-flto -fno-plt -DNDEBUG -fno-math-errno -fno-trapping-math -fno-semantic-interposition -fno-signaling-nans -fno-signed-zeros -freciprocal-math -Wno-psabi" #-funroll-loops 
+    UNROLL="-funroll-loops" #Pessímo, não usar
+    UNROLLmax1="--param=max-unroll-times=1"
+    UNROLLmax2="--param=max-unroll-times=2"
+    UNROLLmax4="--param=max-unroll-times=4"
+    UNROLLmax8="--param=max-unroll-times=8"
 
     ERR=0
     # Builds escalares
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_O0_noOti"       "off"   "-O0         $ABI       -march=${ISA_BASE_noV}" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_O1_noOti"       "off"   "-O1         $ABI       -march=${ISA_BASE_noV}" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_O2_noOti"       "off"   "-O2         $ABI       -march=${ISA_BASE_noV}" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_O3_noOti"       "off"   "-O3         $ABI       -march=${ISA_BASE_noV}" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_Ofast_noOti"    "off"   "-Ofast      $ABI       -march=${ISA_BASE_noV}" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_noVec_O0_noOti"           "off"   "-O0         $ABI       -march=${ISA_BASE_noV}" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_noVec_O1_noOti"           "off"   "-O1         $ABI       -march=${ISA_BASE_noV}" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_noVec_O2_noOti"           "off"   "-O2         $ABI       -march=${ISA_BASE_noV}" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_noVec_O3_noOti"           "off"   "-O3         $ABI       -march=${ISA_BASE_noV}" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_noVec_Ofast_noOti"        "off"   "-Ofast      $ABI       -march=${ISA_BASE_noV}" || ERR=1
 
     # Builds escalares com otimizações
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_O3"             "off"   "-O3    $OTI $ABI $TUNE $CACHE_PARAMS -march=${ISA_BASE_noV}" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_Ofast"          "off"   "-Ofast $OTI $ABI $TUNE $CACHE_PARAMS -march=${ISA_BASE_noV}" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_noVec_O3"                 "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_noV}" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_noVec_Ofast"              "off"   "-Ofast $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_noV}" || ERR=1
 
     # Builds vetoriais com otimizações
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3"       "off"   "-O3    $OTI $ABI $TUNE $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_Ofast"    "off"   "-Ofast $OTI $ABI $TUNE $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3"           "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_Ofast"        "off"   "-Ofast $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC" || ERR=1
+    
+    # Builds vetoriais com otimizações e max unroll
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3_maxU1"     "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC $UNROLLmax1" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3_maxU2"     "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC $UNROLLmax2" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3_maxU4"     "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC $UNROLLmax4" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3_maxU8"     "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC $UNROLLmax8" || ERR=1
 
-    # Builds vetoriais com otimizações e MPI
-    compilar_openmc "openmc_${CORE}_mpi_vlen${VLEN}_O3"         "on"    "-O3    $OTI $ABI $TUNE $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC" || ERR=1
-    compilar_openmc "openmc_${CORE}_mpi_vlen${VLEN}_Ofast"      "on"    "-Ofast $OTI $ABI $TUNE $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC" || ERR=1
+    # Builds vetoriais automáticas com otimizações
+    compilar_openmc "openmc_${CORE}_noMpi_v_O3"                     "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}" || ERR=1
+
+    # Builds vetoriais menor com otimizações
+    VLEN=128
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"        "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b" || ERR=1
+    VLEN=256
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"        "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b" || ERR=1
+    if [ "$CORE" == "A100" ]; then
+        VLEN=512
+        compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"    "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b" || ERR=1
+        VLEN=1024
+        compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"    "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b" || ERR=1
+    fi
+
 
     if [ $ERR == "0" ]; then
         echo "=========================================="
