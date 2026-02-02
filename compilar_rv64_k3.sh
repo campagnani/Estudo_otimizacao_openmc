@@ -189,14 +189,17 @@ function tente_compilar_tudo() {
 
     # Builds vetoriais menor com otimizações
     VLEN=128
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"        "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"        "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3"           "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b $VEC"  || ERR=1
     VLEN=256
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"        "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b" || ERR=1
+    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"        "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
     if [ "$CORE" == "A100" ]; then
+        compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3"       "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b  $VEC" || ERR=1
         VLEN=512
-        compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"    "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b" || ERR=1
+        compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"    "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
+        compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3"       "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b $VEC"  || ERR=1
         VLEN=1024
-        compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"    "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b" || ERR=1
+        compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"    "off"   "-O3    $OTI $ABI $CACHE_PARAMS -march=${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
     fi
 
 
