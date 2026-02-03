@@ -183,7 +183,9 @@ data = [
     ["Native O3 oti xmid", 312.59], # Melhor
     ["Native O3 unroll", 351.97],
     ["Native Ofast oti unroll xmid", 318.55],
-    ["Native Ofast oti xmid", 313.94]
+    ["Native Ofast oti xmid", 313.94],
+    ["Native O3 oti pgo", 282.9900],
+    ["Native O3 oti xmid pgo", 280.3500]
 ]
 
 df = pd.DataFrame(data, columns=["Configuracao", "Tempo_Simulacao"])

@@ -678,10 +678,15 @@ if [ "$DO_RUN" = true ] || [ "$DO_RUN_BUILD" = true ]; then
     fi
 
     for binary in "${binaries[@]}"; do
-        sim=$(basename "$binary")
+        if [ "$DO_RUN" = true ]; then
+            sim=$(basename "$binary")
+        else
+            sim=${binary#openmc/build_}
+            sim=${sim%/bin/openmc}
+        fi
 
         echo "Executando: $binary"
-        $binary > log/"$sim".log 2> log/"$sim".err
+        $binary 2>&1 | tee log/"$sim".log
     done
 
     echo "FIM!"
