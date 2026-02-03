@@ -1,0 +1,74 @@
+<?xml version='1.0' encoding='utf-8'?>
+<materials>
+  <cross_sections>/opt/nuclear-data/endfb-viii.0-hdf5/cross_sections.xml</cross_sections>
+  <material depletable="true" id="1" name="Uránio Natural">
+    <density units="g/cm3" value="18.0"/>
+    <nuclide ao="5.5e-05" name="U234"/>
+    <nuclide ao="0.0072" name="U235"/>
+    <nuclide ao="0.992745" name="U238"/>
+  </material>
+  <material id="2" name="Água Leve">
+    <density units="g/cm3" value="1.0"/>
+    <nuclide name="H1" wo="0.11187"/>
+    <nuclide name="H2" wo="3.354e-05"/>
+    <nuclide name="O16" wo="0.88574"/>
+    <nuclide name="O17" wo="0.00035857"/>
+    <nuclide name="O18" wo="0.0019982"/>
+  </material>
+  <material id="3" name="Ar">
+    <density units="g/cm3" value="0.001225"/>
+    <nuclide ao="0.77826" name="N14"/>
+    <nuclide ao="0.0028589" name="N15"/>
+    <nuclide ao="0.10794" name="O16"/>
+    <nuclide ao="0.10156" name="O17"/>
+    <nuclide ao="3.8829e-05" name="O18"/>
+    <nuclide ao="0.0026789" name="Ar36"/>
+    <nuclide ao="0.0034177" name="Ar38"/>
+    <nuclide ao="0.0032467" name="Ar40"/>
+  </material>
+  <material id="4" name="Alúminio">
+    <density units="g/cm3" value="2.7"/>
+    <nuclide name="Al27" wo="1"/>
+  </material>
+  <material id="5" name="Aço INOX">
+    <density units="g/cm3" value="8.0"/>
+    <nuclide name="C12" wo="0.00029639"/>
+    <nuclide name="C13" wo="3.6051e-06"/>
+    <nuclide name="N14" wo="0.00099608"/>
+    <nuclide name="N15" wo="3.9196e-06"/>
+    <nuclide name="S32" wo="0.00028424"/>
+    <nuclide name="S33" wo="2.3137e-06"/>
+    <nuclide name="S34" wo="1.338e-05"/>
+    <nuclide name="S36" wo="6.7303e-08"/>
+    <nuclide name="P31" wo="0.00045"/>
+    <nuclide name="Si28" wo="0.0068905"/>
+    <nuclide name="Si29" wo="0.00036136"/>
+    <nuclide name="Si30" wo="0.00024813"/>
+    <nuclide name="Fe54" wo="0.036055"/>
+    <nuclide name="Fe56" wo="0.58692"/>
+    <nuclide name="Fe57" wo="0.013797"/>
+    <nuclide name="Fe58" wo="0.018683"/>
+    <nuclide name="Mn55" wo="0.02"/>
+    <nuclide name="Cr50" wo="0.0033926"/>
+    <nuclide name="Cr52" wo="0.068034"/>
+    <nuclide name="Cr53" wo="0.078631"/>
+    <nuclide name="Cr54" wo="0.019942"/>
+    <nuclide name="Ni58" wo="0.080637"/>
+    <nuclide name="Ni60" wo="0.032131"/>
+    <nuclide name="Ni61" wo="0.0014202"/>
+    <nuclide name="Ni62" wo="0.0046012"/>
+    <nuclide name="Ni64" wo="0.0012103"/>
+    <nuclide name="Mo92" wo="0.0035544"/>
+    <nuclide name="Mo94" wo="0.0022637"/>
+    <nuclide name="Mo95" wo="0.0039375"/>
+    <nuclide name="Mo96" wo="0.0041688"/>
+    <nuclide name="Mo97" wo="0.0024118"/>
+    <nuclide name="Mo98" wo="0.0061566"/>
+    <nuclide name="Mo100" wo="0.0025073"/>
+  </material>
+  <material depletable="true" id="6" name="Plutonio Berilio">
+    <density units="g/cm3" value="15.0"/>
+    <nuclide name="Pu239" wo="1"/>
+    <nuclide name="Be9" wo="3"/>
+  </material>
+</materials>

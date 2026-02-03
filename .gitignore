@@ -3,6 +3,7 @@
 *.h5
 *.png
 .vscode
+openmc
 
 # Prerequisites
 *.d
