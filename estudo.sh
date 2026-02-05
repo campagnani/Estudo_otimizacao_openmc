@@ -359,31 +359,130 @@ function compilar_casos_amd64() {
 
     # --- LISTA DE BUILDS ---
     ERR=0
-    #               Nome do binário                         MPI     XSIMD   PGO     FLAGS
-    #compilar_openmc "openmc_generic_O0"                     "off"   "off"   "off"   "-O0        $GENERIC_FLAGS"                 ||   ERR=1
-    #compilar_openmc "openmc_generic_O1"                     "off"   "off"   "off"   "-O1        $GENERIC_FLAGS"                 ||   ERR=1
-    #compilar_openmc "openmc_generic_O2"                     "off"   "off"   "off"   "-O2        $GENERIC_FLAGS"                 ||   ERR=1
-    #compilar_openmc "openmc_generic_O3"                     "off"   "off"   "off"   "-O3        $GENERIC_FLAGS"                 ||   ERR=1
-    #compilar_openmc "openmc_generic_v2_O3"                  "off"   "off"   "off"   "-O3        $GENERIC_FLAGSv2"               ||   ERR=1
-    #compilar_openmc "openmc_generic_v3_O3"                  "off"   "off"   "off"   "-O3        $GENERIC_FLAGSv3"               ||   ERR=1
-#
-    #compilar_openmc "openmc_native_O3"                      "off"   "off"   "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
-    #compilar_openmc "openmc_native_O3_unroll"               "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $UNROLL"          ||   ERR=1
-    #compilar_openmc "openmc_native_O3_oti"                  "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
-    #compilar_openmc "openmc_native_O3_oti_unroll"           "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL"     ||   ERR=1
-    #compilar_openmc "openmc_native_O3_oti_xmid"             "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
-    #compilar_openmc "openmc_native_O3_oti_unroll_xmid"      "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL"     ||   ERR=1
-    #compilar_openmc "openmc_native_Ofast_oti_xmid"          "off"   "on"    "off"   "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
-    #compilar_openmc "openmc_native_Ofast_oti_unroll_xmid"   "off"   "on"    "off"   "-Ofast     $NATIVE_FLAGS $OTI $UNROLL"     ||   ERR=1
+    ############### Nome do binário                         MPI     XSIMD   PGO     FLAGS
+    
+    # Gráfico 1: Curva de tempo Vs. arquitetura base para várias otimizações
+    # A ideia desse gráfico é demonstrar que a mudança de arquitetura base só faz diferença com as otimizações
 
-    compilar_openmc "openmc_native_O3_oti_pgo"              "off"   "off"   "on"   "-O3         $NATIVE_FLAGS $OTI"             ||   ERR=1
-    compilar_openmc "openmc_native_O3_oti_xmid_pgo"         "off"   "on"    "on"   "-O3         $NATIVE_FLAGS $OTI"             ||   ERR=1
+    ## Curva 1: Sem otimização
+    compilar_openmc "openmc_generic_O0"                     "off"   "off"   "off"   "-O0        $GENERIC_FLAGS"                 ||   ERR=1
+    compilar_openmc "openmc_genericV2_O0"                   "off"   "off"   "off"   "-O0        $GENERIC_FLAGSv2"               ||   ERR=1
+    compilar_openmc "openmc_genericV3_O0"                   "off"   "off"   "off"   "-O0        $GENERIC_FLAGSv3"               ||   ERR=1
+    compilar_openmc "openmc_native_O0"                      "off"   "off"   "off"   "-O0        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O0_xsmid"                "off"   "on"    "off"   "-O0        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O0_pgo"                  "off"   "off"   "on"    "-O0        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O0_xsmid_pgo"            "off"   "on"    "on"    "-O0        $NATIVE_FLAGS"                  ||   ERR=1
+    
+    ## Curva 1: Otimização 1
+    compilar_openmc "openmc_generic_O1"                     "off"   "off"   "off"   "-O1        $GENERIC_FLAGS"                 ||   ERR=1
+    compilar_openmc "openmc_genericV2_O1"                   "off"   "off"   "off"   "-O1        $GENERIC_FLAGSv2"               ||   ERR=1
+    compilar_openmc "openmc_genericV3_O1"                   "off"   "off"   "off"   "-O1        $GENERIC_FLAGSv3"               ||   ERR=1
+    compilar_openmc "openmc_native_O1"                      "off"   "off"   "off"   "-O1        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O1_xsmid"                "off"   "on"    "off"   "-O1        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O1_pgo"                  "off"   "off"   "on"    "-O1        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O1_xsmid_pgo"            "off"   "on"    "on"    "-O1        $NATIVE_FLAGS"                  ||   ERR=1
+    
+    ## Curva 1: Otimização 2
+    compilar_openmc "openmc_generic_O2"                     "off"   "off"   "off"   "-O2        $GENERIC_FLAGS"                 ||   ERR=1
+    compilar_openmc "openmc_genericV2_O2"                   "off"   "off"   "off"   "-O2        $GENERIC_FLAGSv2"               ||   ERR=1
+    compilar_openmc "openmc_genericV3_O2"                   "off"   "off"   "off"   "-O2        $GENERIC_FLAGSv3"               ||   ERR=1
+    compilar_openmc "openmc_native_O2"                      "off"   "off"   "off"   "-O2        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O2_xsmid"                "off"   "on"    "off"   "-O2        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O2_pgo"                  "off"   "off"   "on"    "-O2        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O2_xsmid_pgo"            "off"   "on"    "on"    "-O2        $NATIVE_FLAGS"                  ||   ERR=1
+    
+    ## Curva 1: Otimização 3
+    compilar_openmc "openmc_generic_O3"                     "off"   "off"   "off"   "-O3        $GENERIC_FLAGS"                 ||   ERR=1
+    compilar_openmc "openmc_genericV2_O3"                   "off"   "off"   "off"   "-O3        $GENERIC_FLAGSv2"               ||   ERR=1
+    compilar_openmc "openmc_genericV3_O3"                   "off"   "off"   "off"   "-O3        $GENERIC_FLAGSv3"               ||   ERR=1
+    compilar_openmc "openmc_native_O3"                      "off"   "off"   "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O3_xsmid"                "off"   "on"    "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O3_pgo"                  "off"   "off"   "on"    "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_O3_xsmid_pgo"            "off"   "on"    "on"    "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    
+    ## Curva 1: Otimização fast
+    compilar_openmc "openmc_generic_Ofast"                  "off"   "off"   "off"   "-O3        $GENERIC_FLAGS"                 ||   ERR=1
+    compilar_openmc "openmc_genericV2_Ofast"                "off"   "off"   "off"   "-O3        $GENERIC_FLAGSv2"               ||   ERR=1
+    compilar_openmc "openmc_genericV3_Ofast"                "off"   "off"   "off"   "-O3        $GENERIC_FLAGSv3"               ||   ERR=1
+    compilar_openmc "openmc_native_Ofast"                   "off"   "off"   "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_Ofast_xsmid"             "off"   "on"    "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_Ofast_pgo"               "off"   "off"   "on"    "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_native_Ofast_xsmid_pgo"         "off"   "on"    "on"    "-O3        $NATIVE_FLAGS"                  ||   ERR=1
 
 
+    # Gráfico 2: Curva de tempo Vs. flag de otimização para arquitetura nativa comparando PGO ativo e XSIMD ativo
+    ## Curva 1: ñ
+    #    "openmc_generic_O0"
+    #    "openmc_generic_O1"
+    #    "openmc_generic_O2"
+    #    "openmc_generic_O3"
+    #    "openmc_generic_Ofast"
+    
+    ## Curva 2: XSIMD ativo
+    #    "openmc_native_O0_xsmid"
+    #    "openmc_native_O1_xsmid"
+    #    "openmc_native_O2_xsmid"
+    #    "openmc_native_O3_xsmid"
+    #    "openmc_native_Ofast_xsmid"
+    
+    ## Curva 3: PGO ativo
+    #    "openmc_native_O0_pgo"
+    #    "openmc_native_O1_pgo"
+    #    "openmc_native_O2_pgo"
+    #    "openmc_native_O3_pgo"
+    #    "openmc_native_Ofast_pgo"
+   
+    ## Curva 4: XSMID e PGO ativo
+    #    "openmc_native_O0_xsmid_pgo"
+    #    "openmc_native_O1_xsmid_pgo"
+    #    "openmc_native_O2_xsmid_pgo"
+    #    "openmc_native_O3_xsmid_pgo"
+    #    "openmc_native_Ofast_xsmid_pgo"
+    
 
 
-    #compilar_openmc "openmc_native_O3_oti_xmid_mpi"     "on"    "on"    "-O3        $NATIVE_FLAGS $OTI"   ||   ERR=1
-    #compilar_openmc "openmc_native_Ofast_oti_xmid_mpi"  "on"    "on"    "-Ofast     $NATIVE_FLAGS $OTI"   ||   ERR=1
+    # Gráfico 3: Curva de tempo Vs. PGO/XSIMD ativo ou não
+    ## Curva 1: para native com O3
+    compilar_openmc "openmc_native_O3_oti"                  "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_xsmid"            "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_pgo"              "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_xsmid_pgo"        "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
+
+    ## Curva 2: para native com Ofast
+    compilar_openmc "openmc_native_Ofast_oti"               "off"   "off"   "off"   "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
+    compilar_openmc "openmc_native_Ofast_oti_xsmid"         "off"   "on"    "off"   "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
+    compilar_openmc "openmc_native_Ofast_oti_pgo"           "off"   "off"   "on"    "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1   
+    compilar_openmc "openmc_native_Ofast_oti_xsmid_pgo"     "off"   "on"    "on"    "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
+
+    
+    # Gráfico 4: Curva de tempo Vs. UNROLL loops
+    ## Curva 1: para native com O3
+    compilar_openmc "openmc_native_O3_oti_NU"               "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $N_UNROLL"    ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_Uauto"            "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_AUTO" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_maxU2"            "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max2" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_maxU4"            "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max4" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_maxU8"            "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max8" ||   ERR=1
+    
+    ## Curva 2: para native com O3 e xsmid
+    compilar_openmc "openmc_native_O3_oti_xsmid_NU"         "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $N_UNROLL"    ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_xsmid_Uauto"      "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_AUTO" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_xsmid_maxU2"      "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max2" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_xsmid_maxU4"      "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max4" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_xsmid_maxU8"      "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max8" ||   ERR=1
+    
+    ## Curva 3: para native com O3 e pgo
+    compilar_openmc "openmc_native_O3_oti_pgo_NU"           "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI $N_UNROLL"    ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_pgo_Uauto"        "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_AUTO" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_pgo_maxU2"        "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max2" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_pgo_maxU4"        "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max4" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_pgo_maxU8"        "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max8" ||   ERR=1
+    
+    ## Curva 4: para native com O3, xsmid e pgo
+    compilar_openmc "openmc_native_O3_oti_xsmid_pgo_NU"     "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI $N_UNROLL"    ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_xsmid_pgo_Uauto"  "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_AUTO" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_xsmid_pgo_maxU2"  "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max2" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_xsmid_pgo_maxU4"  "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max4" ||   ERR=1
+    compilar_openmc "openmc_native_O3_oti_xsmid_pgo_maxU8"  "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max8" ||   ERR=1
 
     if [ $ERR == "0" ]; then
         echo "=========================================="
