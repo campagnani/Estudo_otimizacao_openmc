@@ -654,43 +654,84 @@ function compilar_casos_rv64_k3() {
     ############### Nome do binário                                 MPI     XSIMD   PGO     FLAGS
 
     # Builds escalares
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_O0_noOti"           "off"   "off"   "off"   "-O0                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_O1_noOti"           "off"   "off"   "off"   "-O1                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_O2_noOti"           "off"   "off"   "off"   "-O2                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_O3_noOti"           "off"   "off"   "off"   "-O3                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_Ofast_noOti"        "off"   "off"   "off"   "-Ofast                     $ISA_BASE_noV" || ERR=1
-
-    # Builds escalares com otimizações extras
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_O3"                 "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_noVec_Ofast"              "off"   "off"   "off"   "-Ofast $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
-
-    # Builds vetoriais com vlen fixo
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3_noOti"     "off"   "off"   "off"   "-O3                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_Ofast_noOti"  "off"   "off"   "off"   "-Ofast                    ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-
-    # Builds vetoriais com vlen fixo e otimizações extras
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3"           "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_Ofast"        "off"   "off"   "off"   "-Ofast $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    
-    # Builds vetoriais com vlen fixo, otimizações extras e casos unroll
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3_NU"        "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $N_UNROLL" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3_Uauto"     "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_AUTO" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3_maxU2"     "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_max2" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3_maxU4"     "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_max4" || ERR=1
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}_O3_maxU8"     "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_max8" || ERR=1
+    compilar_openmc "openmc_${CORE}_O0"                             "off"   "off"   "off"   "-O0                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_O1"                             "off"   "off"   "off"   "-O1                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_O2"                             "off"   "off"   "off"   "-O2                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_O3"                             "off"   "off"   "off"   "-O3                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_Ofast"                          "off"   "off"   "off"   "-Ofast                     $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_O3_oti"                         "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_Ofast_oti"                      "off"   "off"   "off"   "-Ofast $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
 
     # Builds vetoriais vlen=automático com otimizações extras
-    compilar_openmc "openmc_${CORE}_noMpi_v_O3"                     "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}" || ERR=1
-    VLEN=128
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"        "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
-    VLEN=256
-    compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"        "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
-    if [ "$CORE" == "A100" ]; then
-        VLEN=512
-        compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"    "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
-        VLEN=1024
-        compilar_openmc "openmc_${CORE}_noMpi_vlen${VLEN}min_O3"    "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
-    fi
+    compilar_openmc "openmc_${CORE}_v_O0"                           "off"   "off"   "off"   "-O0                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_O1"                           "off"   "off"   "off"   "-O1                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_O2"                           "off"   "off"   "off"   "-O2                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_O3"                           "off"   "off"   "off"   "-O3                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_Ofast"                        "off"   "off"   "off"   "-Ofast                    ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_O3_oti"                       "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_Ofast_oti"                    "off"   "off"   "off"   "-Ofast $OTI $CACHE_PARAMS ${ISA_BASE_V}"  || ERR=1
+    
+    # Builds vetoriais com vlen fixo
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_O0"                 "off"   "off"   "off"   "-O0                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_O1"                 "off"   "off"   "off"   "-O1                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_O2"                 "off"   "off"   "off"   "-O2                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_O3"                 "off"   "off"   "off"   "-O3                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_Ofast"              "off"   "off"   "off"   "-Ofast                    ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_O3_oti"             "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_Ofast_oti"          "off"   "off"   "off"   "-Ofast $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    
+
+
+    # Builds escalares + PGO
+    compilar_openmc "openmc_${CORE}_O0_pgo"                             "off"   "off"   "on"   "-O0                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_O1_pgo"                             "off"   "off"   "on"   "-O1                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_O2_pgo"                             "off"   "off"   "on"   "-O2                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_O3_pgo"                             "off"   "off"   "on"   "-O3                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_Ofast_pgo"                          "off"   "off"   "on"   "-Ofast                     $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_O3_oti_pgo"                         "off"   "off"   "on"   "-O3    $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_Ofast_oti_pgo"                      "off"   "off"   "on"   "-Ofast $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
+
+    # Builds vetoriais vlen=automático com otimizações extras + PGO
+    compilar_openmc "openmc_${CORE}_v_O0_pgo"                           "off"   "off"   "on"   "-O0                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_O1_pgo"                           "off"   "off"   "on"   "-O1                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_O2_pgo"                           "off"   "off"   "on"   "-O2                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_O3_pgo"                           "off"   "off"   "on"   "-O3                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_Ofast_pgo"                        "off"   "off"   "on"   "-Ofast                    ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_O3_oti_pgo"                       "off"   "off"   "on"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_v_Ofast_oti_pgo"                    "off"   "off"   "on"   "-Ofast $OTI $CACHE_PARAMS ${ISA_BASE_V}"  || ERR=1
+    
+    # Builds vetoriais com vlen fixo + PGO
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_O0_pgo"                 "off"   "off"   "on"   "-O0                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_O1_pgo"                 "off"   "off"   "on"   "-O1                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_O2_pgo"                 "off"   "off"   "on"   "-O2                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_O3_pgo"                 "off"   "off"   "on"   "-O3                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_Ofast_pgo"              "off"   "off"   "on"   "-Ofast                    ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_O3_oti_pgo"             "off"   "off"   "on"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_vlen${VLEN}_Ofast_oti_pgo"          "off"   "off"   "on"   "-Ofast $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    
+    
+
+
+
+
+    # Builds vetoriais com vlen fixo, otimizações extras e casos unroll
+    #compilar_openmc "openmc_${CORE}_vlen${VLEN}_O3_oti_NU"          "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $N_UNROLL" || ERR=1
+    #compilar_openmc "openmc_${CORE}_vlen${VLEN}_O3_oti_Uauto"       "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_AUTO" || ERR=1
+    #compilar_openmc "openmc_${CORE}_vlen${VLEN}_O3_oti_maxU2"       "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_max2" || ERR=1
+    #compilar_openmc "openmc_${CORE}_vlen${VLEN}_O3_oti_maxU4"       "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_max4" || ERR=1
+    #compilar_openmc "openmc_${CORE}_vlen${VLEN}_O3_oti_maxU8"       "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_max8" || ERR=1
+
+    # Builds vetoriais vlen=automático com otimizações extras
+    #VLEN=128
+    #compilar_openmc "openmc_${CORE}_vlen${VLEN}min_O3_oti"          "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
+    #VLEN=256
+    #compilar_openmc "openmc_${CORE}_vlen${VLEN}min_O3_oti"          "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
+    #if [ "$CORE" == "A100" ]; then
+    #    VLEN=512
+    #    compilar_openmc "openmc_${CORE}_vlen${VLEN}min_O3_oti"      "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
+    #    VLEN=1024
+    #    compilar_openmc "openmc_${CORE}_vlen${VLEN}min_O3_oti"      "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
+    #fi
 
 
     if [ $ERR == "0" ]; then
