@@ -81,7 +81,7 @@ Descrição:
 
 Opções Disponíveis:
   --deps       Instala dependencias para clonar e compilar o openmc.
-  --clone      Remove a pasta 'openmc' atual, clona o repositório oficial, faz checkout na branch master e saí.
+  --clone      Remove a pasta 'openmc' atual, clona o OpenMC v0.16.0 (tag estável) e sai.
   --compile    Compila os vários casos de estudo do openmc e sai.
        --cores N      Define manualmente o número de núcleos para o 'make'.
        --A100         Define manualmente a otimização para o A100.
@@ -112,7 +112,7 @@ if [ "$DO_DEPS" = true ]; then
     if [ -f /etc/debian_version ]; then
         echo "Distribuição baseada em Debian detectada."
         sudo apt-get update
-        sudo apt-get install -y build-essencial cmake libhdf5-dev libpng-dev libxml2-dev libpugixml-dev libeigen3-dev openmpi-bin libopenmpi-dev libomp-dev patchelf
+        sudo apt-get install -y build-essential cmake libhdf5-dev libpng-dev libxml2-dev libpugixml-dev libeigen3-dev openmpi-bin libopenmpi-dev libomp-dev patchelf
     elif [ -f /etc/arch-release ]; then
         echo "Arch Linux detectado."
         sudo pacman -S --noconfirm gcc cmake hdf5 libpng pugixml eigen openmpi
@@ -120,24 +120,25 @@ if [ "$DO_DEPS" = true ]; then
         echo "Distribuição não detectada. Instale manualmente."
         echo ""
         echo "Para Debian e derivados:"
-        echo "sudo apt-get update ; sudo apt-get install -y g++ cmake libhdf5-dev libpng-dev libxml2-dev libpugixml-dev libeigen3-dev openmpi-bin libopenmpi-dev libomp-dev patchelf"
+        echo "sudo apt-get update ; sudo apt-get install -y build-essential cmake libhdf5-dev libpng-dev libxml2-dev libpugixml-dev libeigen3-dev openmpi-bin libopenmpi-dev libomp-dev patchelf"
         echo ""
         echo "Para ArchLinux e derivados:"
         echo "sudo pacman -S --noconfirm gcc cmake hdf5 libpng pugixml eigen openmpi"
+        exit 1
     fi
-    exit 1
+    exit 0
 fi
 
 
 
 # Clonagem (--clone)
 if [ "$DO_CLONE" = true ]; then
-    echo "--- Clonando repositório OpenMC ---"
-    
-    rm -rf openmc 
-    git clone --recurse-submodules https://github.com/openmc-dev/openmc.git
+    echo "--- Clonando OpenMC v0.16.0 ---"
+    rm -rf openmc
+    git clone --recurse-submodules --branch v0.16.0 https://github.com/openmc-dev/openmc.git
     cd openmc || exit
-    git checkout master
+    git submodule update --init --recursive
+    echo "--- Versão clonada: $(git describe --tags --always) ---"
     exit 0
 fi
 
@@ -162,43 +163,37 @@ function compilar_openmc() {
     echo "----------------------------------------INICIO"
     local BUILD_NAME="$1"
     local MPI="$2"
-    local XSIMD="$3"
-    local DO_PGO="$4"
-    local OPT_FLAGS="$5"
+    local DO_PGO="$3"
+    local OPT_FLAGS="$4"
 
 
     # Verifica se os parametros foram passados
     if [ -z "$BUILD_NAME" ] || [ -z "$MPI" ] || [ -z "$DO_PGO" ] || [ -z "$OPT_FLAGS" ]; then
-        echo "Erro: Uso correto ->  compilar_openmc  <nome_da_pasta>  <mpi>  <xsimd>  <pgo>  <flags>"
-        echo "                                                        on/off on/off   on/off"
+        echo "Erro: Uso correto ->  compilar_openmc  <nome_da_pasta>  <mpi>  <pgo>  <flags>"
+        echo "                                                        on/off on/off"
         echo "----------------------------------------FIM"
         return 1
     fi
 
     echo "--- Iniciando compilação em: $BUILD_NAME ---"
     echo "--- MPI: $MPI ---"
-    echo "--- XSIMD: $XSIMD ---"
     echo "--- PGO: $DO_PGO ---"
     echo "--- Flags: $OPT_FLAGS ---"
-
 
     # Define diretório de build
     BUILD_DIR="build_$BUILD_NAME"
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR" || { echo "Falha ao entrar no diretório $BUILD_DIR"; return 1; }
 
-    # Define flags extras do CMake (LTO e XSIMD)
-    EXTRA_CMAKE_FLAGS=""
+    # Flags comuns do CMake para 0.16.0:
+    # - testes C++ (Catch2) vêm ON por padrão e atrasam cada variante
+    # - CMAKE_POLICY_VERSION_MINIMUM cobre vendor/fmt e pugixml no CMake 4
+    # - GIT_SUBMODULE=OFF: submódulos já foram inicializados no --clone
+    EXTRA_CMAKE_FLAGS="-DOPENMC_BUILD_TESTS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DGIT_SUBMODULE=OFF"
     if [[ "$OPT_FLAGS" == *"-flto"* ]]; then
         EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=TRUE"
     else
         EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=FALSE"
-    fi
-
-    if [[ "$XSIMD" == "on" ]]; then
-        EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DXTENSOR_USE_XSIMD=ON"
-    else
-        EXTRA_CMAKE_FLAGS="$EXTRA_CMAKE_FLAGS -DXTENSOR_USE_XSIMD=OFF"
     fi
 
     # ==============================================================================
@@ -206,14 +201,19 @@ function compilar_openmc() {
     # ==============================================================================
     if [ "$DO_PGO" == "on" ]; then
         echo "🚀 [PGO] Iniciando FASE 1: Geração de Perfil (Instrumentation)..."
-        
-        # Adiciona flag de geração de perfil (precisa ser variável separada para trocar a flag depois)
-        PGO_GEN_FLAGS="$OPT_FLAGS -fprofile-generate"
-        
+
+        # -fprofile-update=atomic é necessário com OpenMP (contadores por thread).
+        if [ "$CC" == "gcc" ]; then
+            PGO_GEN_FLAGS="$OPT_FLAGS -fprofile-generate -fprofile-update=atomic"
+        else
+            PGO_GEN_FLAGS="$OPT_FLAGS -fprofile-generate"
+        fi
+
+        # CMAKE_BUILD_TYPE=None: não injeta -O3/-DNDEBUG do Release.
         echo "Configurando CMake (Instrumentação)..."
         if ! cmake -DCMAKE_C_COMPILER="$CC" \
               -DCMAKE_CXX_COMPILER="$CXX" \
-              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_BUILD_TYPE=None \
               -DCMAKE_CXX_FLAGS="$PGO_GEN_FLAGS" \
               -DCMAKE_C_FLAGS="$PGO_GEN_FLAGS" \
               -DHDF5_PREFER_PARALLEL=off \
@@ -240,45 +240,58 @@ function compilar_openmc() {
         cp ../../PGO/settings.xml   .
 
         echo "🏃 [PGO] Rodando OpenMC para gerar perfil..."
-        # Executa o binário gerado. O caminho padrão do CMake é ./bin/openmc
-        if [ -f "./bin/openmc" ]; then
-            ./bin/openmc
-        else
+        if [ ! -f "./bin/openmc" ]; then
             echo "❌ ERRO: Executável não encontrado em ./bin/openmc para rodar o PGO."
             cd ..
             return 1
         fi
-        
+        if ! ./bin/openmc; then
+            echo "❌ ERRO CRÍTICO: OpenMC falhou na simulação de perfil PGO."
+            cd ..
+            return 1
+        fi
+
         echo "🧹 [PGO] Limpando binários para forçar recompilação..."
         make clean
-        
-        # Define as flags para a próxima etapa (USO do perfil)
-        # -fprofile-correction ajuda em casos multithread onde o contador não é exato
+
         if [ "$CC" == "gcc" ]; then
+            # -fprofile-correction ajuda em casos multithread onde o contador não é exato
             OPT_FLAGS="$OPT_FLAGS -fprofile-use -fprofile-correction"
         else
             echo "🔄 [PGO-LLVM] Convertendo dados brutos (.profraw) para perfil (.profdata)..."
-            
-            # Tenta usar a versão específica do LLVM se existir, senão usa a genérica
-            if command -v llvm-profdata-21 &> /dev/null; then
-                PROFDATA_TOOL="llvm-profdata-21"
-            elif command -v llvm-profdata &> /dev/null; then
-                PROFDATA_TOOL="llvm-profdata"
-            else
+
+            PROFDATA_TOOL=""
+            for candidate in llvm-profdata llvm-profdata-22 llvm-profdata-21 llvm-profdata-20 llvm-profdata-19; do
+                if command -v "$candidate" &> /dev/null; then
+                    PROFDATA_TOOL="$candidate"
+                    break
+                fi
+            done
+            if [ -z "$PROFDATA_TOOL" ]; then
                 echo "❌ ERRO: Ferramenta 'llvm-profdata' não encontrada. Instale-a para usar PGO no Clang."
+                cd ..
+                return 1
+            fi
+            echo "--- llvm-profdata: $PROFDATA_TOOL ---"
+
+            shopt -s nullglob
+            PROFRAW_FILES=( default*.profraw )
+            shopt -u nullglob
+            if [ ${#PROFRAW_FILES[@]} -eq 0 ]; then
+                echo "❌ ERRO: Nenhum arquivo .profraw encontrado após a simulação PGO."
+                cd ..
                 return 1
             fi
 
-            # Mescla os arquivos profraw no profdata exigido pelo Clang
-            if ! $PROFDATA_TOOL merge -output=default.profdata default.profraw; then
+            if ! $PROFDATA_TOOL merge -output=default.profdata "${PROFRAW_FILES[@]}"; then
                 echo "❌ ERRO: Falha ao converter o perfil do Clang."
+                cd ..
                 return 1
             fi
-            
-            # Informa explicitamente ao Clang onde está o arquivo convertido
+
             OPT_FLAGS="$OPT_FLAGS -fprofile-use=default.profdata"
         fi
-        
+
         echo "✅ [PGO] Perfil gerado. Configurando flags para recompilação: $OPT_FLAGS"
     fi
 
@@ -287,10 +300,11 @@ function compilar_openmc() {
     # FASE 2: COMPILAÇÃO FINAL (Normal ou PGO-Use)
     # ==============================================================================
     
+    # CMAKE_BUILD_TYPE=None: não injeta -O3/-DNDEBUG do Release.
     echo "⚙️  Configurando CMake (Build Final)..."
     if ! cmake -DCMAKE_C_COMPILER="$CC" \
           -DCMAKE_CXX_COMPILER="$CXX" \
-          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_BUILD_TYPE=None \
           -DCMAKE_CXX_FLAGS="$OPT_FLAGS" \
           -DCMAKE_C_FLAGS="$OPT_FLAGS" \
           -DHDF5_PREFER_PARALLEL=off \
@@ -361,11 +375,12 @@ function compilar_casos_amd64() {
     GENERIC_FLAGSv3=" -march=x86-64-v3  -mtune=generic"
     NATIVE_FLAGS="    -march=native     -mtune=native"
 
-    N_UNROLL="-fno-unroll-loops"
-    UNROLL_AUTO="-funroll-loops"
-    UNROLL_max2="-funroll-loops --param=max-unroll-times=2"
-    UNROLL_max4="-funroll-loops --param=max-unroll-times=4"
-    UNROLL_max8="-funroll-loops --param=max-unroll-times=8"
+    #Diagnosticado que unroll é irrelevante para o OpenMC
+    #N_UNROLL="-fno-unroll-loops"
+    #UNROLL_AUTO="-funroll-loops"
+    #UNROLL_max2="-funroll-loops --param=max-unroll-times=2"
+    #UNROLL_max4="-funroll-loops --param=max-unroll-times=4"
+    #UNROLL_max8="-funroll-loops --param=max-unroll-times=8"
     
     #######################
     ##### OTIMIZAÇÕES
@@ -396,130 +411,65 @@ function compilar_casos_amd64() {
 
     # --- LISTA DE BUILDS ---
     ERR=0
-    ############### Nome do binário                         MPI     XSIMD   PGO     FLAGS
-    
+    ############### Nome do binário                         MPI     PGO     FLAGS
+
     # Gráfico 1: Curva de tempo Vs. arquitetura base para várias otimizações
     # A ideia desse gráfico é demonstrar que a mudança de arquitetura base só faz diferença com as otimizações
 
     ## Curva 1: Sem otimização
-    compilar_openmc "openmc_${CC}_generic_O0"                     "off"   "off"   "off"   "-O0        $GENERIC_FLAGS"                 ||   ERR=1
-    compilar_openmc "openmc_${CC}_genericV2_O0"                   "off"   "off"   "off"   "-O0        $GENERIC_FLAGSv2"               ||   ERR=1
-    compilar_openmc "openmc_${CC}_genericV3_O0"                   "off"   "off"   "off"   "-O0        $GENERIC_FLAGSv3"               ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O0"                      "off"   "off"   "off"   "-O0        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O0_xsmid"                "off"   "on"    "off"   "-O0        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O0_pgo"                  "off"   "off"   "on"    "-O0        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O0_xsmid_pgo"            "off"   "on"    "on"    "-O0        $NATIVE_FLAGS"                  ||   ERR=1
-    
-    ## Curva 1: Otimização 1
-    compilar_openmc "openmc_${CC}_generic_O1"                     "off"   "off"   "off"   "-O1        $GENERIC_FLAGS"                 ||   ERR=1
-    compilar_openmc "openmc_${CC}_genericV2_O1"                   "off"   "off"   "off"   "-O1        $GENERIC_FLAGSv2"               ||   ERR=1
-    compilar_openmc "openmc_${CC}_genericV3_O1"                   "off"   "off"   "off"   "-O1        $GENERIC_FLAGSv3"               ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O1"                      "off"   "off"   "off"   "-O1        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O1_xsmid"                "off"   "on"    "off"   "-O1        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O1_pgo"                  "off"   "off"   "on"    "-O1        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O1_xsmid_pgo"            "off"   "on"    "on"    "-O1        $NATIVE_FLAGS"                  ||   ERR=1
-    
-    ## Curva 1: Otimização 2
-    compilar_openmc "openmc_${CC}_generic_O2"                     "off"   "off"   "off"   "-O2        $GENERIC_FLAGS"                 ||   ERR=1
-    compilar_openmc "openmc_${CC}_genericV2_O2"                   "off"   "off"   "off"   "-O2        $GENERIC_FLAGSv2"               ||   ERR=1
-    compilar_openmc "openmc_${CC}_genericV3_O2"                   "off"   "off"   "off"   "-O2        $GENERIC_FLAGSv3"               ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O2"                      "off"   "off"   "off"   "-O2        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O2_xsmid"                "off"   "on"    "off"   "-O2        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O2_pgo"                  "off"   "off"   "on"    "-O2        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O2_xsmid_pgo"            "off"   "on"    "on"    "-O2        $NATIVE_FLAGS"                  ||   ERR=1
-    
-    ## Curva 1: Otimização 3
-    compilar_openmc "openmc_${CC}_generic_O3"                     "off"   "off"   "off"   "-O3        $GENERIC_FLAGS"                 ||   ERR=1
-    compilar_openmc "openmc_${CC}_genericV2_O3"                   "off"   "off"   "off"   "-O3        $GENERIC_FLAGSv2"               ||   ERR=1
-    compilar_openmc "openmc_${CC}_genericV3_O3"                   "off"   "off"   "off"   "-O3        $GENERIC_FLAGSv3"               ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3"                      "off"   "off"   "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_xsmid"                "off"   "on"    "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_pgo"                  "off"   "off"   "on"    "-O3        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_xsmid_pgo"            "off"   "on"    "on"    "-O3        $NATIVE_FLAGS"                  ||   ERR=1
-    
-    ## Curva 1: Otimização fast
-    compilar_openmc "openmc_${CC}_generic_Ofast"                  "off"   "off"   "off"   "-O3        $GENERIC_FLAGS"                 ||   ERR=1
-    compilar_openmc "openmc_${CC}_genericV2_Ofast"                "off"   "off"   "off"   "-O3        $GENERIC_FLAGSv2"               ||   ERR=1
-    compilar_openmc "openmc_${CC}_genericV3_Ofast"                "off"   "off"   "off"   "-O3        $GENERIC_FLAGSv3"               ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_Ofast"                   "off"   "off"   "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_Ofast_xsmid"             "off"   "on"    "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_Ofast_pgo"               "off"   "off"   "on"    "-O3        $NATIVE_FLAGS"                  ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_Ofast_xsmid_pgo"         "off"   "on"    "on"    "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_${CC}_generic_O0"                     "off"   "off"   "-O0        $GENERIC_FLAGS"                 ||   ERR=1
+    compilar_openmc "openmc_${CC}_genericV2_O0"                   "off"   "off"   "-O0        $GENERIC_FLAGSv2"               ||   ERR=1
+    compilar_openmc "openmc_${CC}_genericV3_O0"                   "off"   "off"   "-O0        $GENERIC_FLAGSv3"               ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_O0"                      "off"   "off"   "-O0        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_O0_pgo"                  "off"   "on"    "-O0        $NATIVE_FLAGS"                  ||   ERR=1
+
+    ## Curva 2: Otimização 1
+    compilar_openmc "openmc_${CC}_generic_O1"                     "off"   "off"   "-O1        $GENERIC_FLAGS"                 ||   ERR=1
+    compilar_openmc "openmc_${CC}_genericV2_O1"                   "off"   "off"   "-O1        $GENERIC_FLAGSv2"               ||   ERR=1
+    compilar_openmc "openmc_${CC}_genericV3_O1"                   "off"   "off"   "-O1        $GENERIC_FLAGSv3"               ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_O1"                      "off"   "off"   "-O1        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_O1_pgo"                  "off"   "on"    "-O1        $NATIVE_FLAGS"                  ||   ERR=1
+
+    ## Curva 3: Otimização 2
+    compilar_openmc "openmc_${CC}_generic_O2"                     "off"   "off"   "-O2        $GENERIC_FLAGS"                 ||   ERR=1
+    compilar_openmc "openmc_${CC}_genericV2_O2"                   "off"   "off"   "-O2        $GENERIC_FLAGSv2"               ||   ERR=1
+    compilar_openmc "openmc_${CC}_genericV3_O2"                   "off"   "off"   "-O2        $GENERIC_FLAGSv3"               ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_O2"                      "off"   "off"   "-O2        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_O2_pgo"                  "off"   "on"    "-O2        $NATIVE_FLAGS"                  ||   ERR=1
+
+    ## Curva 4: Otimização 3
+    compilar_openmc "openmc_${CC}_generic_O3"                     "off"   "off"   "-O3        $GENERIC_FLAGS"                 ||   ERR=1
+    compilar_openmc "openmc_${CC}_genericV2_O3"                   "off"   "off"   "-O3        $GENERIC_FLAGSv2"               ||   ERR=1
+    compilar_openmc "openmc_${CC}_genericV3_O3"                   "off"   "off"   "-O3        $GENERIC_FLAGSv3"               ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_O3"                      "off"   "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_O3_pgo"                  "off"   "on"    "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_O3_oti"                  "off"   "off"   "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_O3_oti_pgo"              "off"   "on"    "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
+
+    ## Curva 5: Otimização fast
+    compilar_openmc "openmc_${CC}_generic_Ofast"                  "off"   "off"   "-O3        $GENERIC_FLAGS"                 ||   ERR=1
+    compilar_openmc "openmc_${CC}_genericV2_Ofast"                "off"   "off"   "-O3        $GENERIC_FLAGSv2"               ||   ERR=1
+    compilar_openmc "openmc_${CC}_genericV3_Ofast"                "off"   "off"   "-O3        $GENERIC_FLAGSv3"               ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_Ofast"                   "off"   "off"   "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_Ofast_pgo"               "off"   "on"    "-O3        $NATIVE_FLAGS"                  ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_Ofast_oti"               "off"   "off"   "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
+    compilar_openmc "openmc_${CC}_native_Ofast_oti_pgo"           "off"   "on"    "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
 
 
-    # Gráfico 2: Curva de tempo Vs. flag de otimização para arquitetura nativa comparando PGO ativo e XSIMD ativo
+    # Gráfico 2: Curva de tempo Vs. flag de otimização para arquitetura nativa comparando PGO ativo
     ## Curva 1: ñ
     #    "openmc_${CC}_generic_O0"
     #    "openmc_${CC}_generic_O1"
     #    "openmc_${CC}_generic_O2"
     #    "openmc_${CC}_generic_O3"
     #    "openmc_${CC}_generic_Ofast"
-    
-    ## Curva 2: XSIMD ativo
-    #    "openmc_${CC}_native_O0_xsmid"
-    #    "openmc_${CC}_native_O1_xsmid"
-    #    "openmc_${CC}_native_O2_xsmid"
-    #    "openmc_${CC}_native_O3_xsmid"
-    #    "openmc_${CC}_native_Ofast_xsmid"
-    
-    ## Curva 3: PGO ativo
+
+    ## Curva 2: PGO ativo
     #    "openmc_${CC}_native_O0_pgo"
     #    "openmc_${CC}_native_O1_pgo"
     #    "openmc_${CC}_native_O2_pgo"
     #    "openmc_${CC}_native_O3_pgo"
     #    "openmc_${CC}_native_Ofast_pgo"
-   
-    ## Curva 4: XSMID e PGO ativo
-    #    "openmc_${CC}_native_O0_xsmid_pgo"
-    #    "openmc_${CC}_native_O1_xsmid_pgo"
-    #    "openmc_${CC}_native_O2_xsmid_pgo"
-    #    "openmc_${CC}_native_O3_xsmid_pgo"
-    #    "openmc_${CC}_native_Ofast_xsmid_pgo"
-    
-
-
-    # Gráfico 3: Curva de tempo Vs. PGO/XSIMD ativo ou não
-    ## Curva 1: para native com O3
-    compilar_openmc "openmc_${CC}_native_O3_oti"                  "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid"            "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_pgo"              "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_pgo"        "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI"             ||   ERR=1
-
-    ## Curva 2: para native com Ofast
-    compilar_openmc "openmc_${CC}_native_Ofast_oti"               "off"   "off"   "off"   "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_Ofast_oti_xsmid"         "off"   "on"    "off"   "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_Ofast_oti_pgo"           "off"   "off"   "on"    "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1   
-    compilar_openmc "openmc_${CC}_native_Ofast_oti_xsmid_pgo"     "off"   "on"    "on"    "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
-
-    
-    # Gráfico 4: Curva de tempo Vs. UNROLL loops
-    ## Curva 1: para native com O3
-    compilar_openmc "openmc_${CC}_native_O3_oti_NU"               "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $N_UNROLL"    ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_Uauto"            "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_AUTO" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_maxU2"            "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max2" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_maxU4"            "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max4" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_maxU8"            "off"   "off"   "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max8" ||   ERR=1
-    
-    ## Curva 2: para native com O3 e xsmid
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_NU"         "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $N_UNROLL"    ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_Uauto"      "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_AUTO" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_maxU2"      "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max2" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_maxU4"      "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max4" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_maxU8"      "off"   "on"    "off"   "-O3        $NATIVE_FLAGS $OTI $UNROLL_max8" ||   ERR=1
-    
-    ## Curva 3: para native com O3 e pgo
-    compilar_openmc "openmc_${CC}_native_O3_oti_pgo_NU"           "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI $N_UNROLL"    ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_pgo_Uauto"        "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_AUTO" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_pgo_maxU2"        "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max2" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_pgo_maxU4"        "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max4" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_pgo_maxU8"        "off"   "off"   "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max8" ||   ERR=1
-    
-    ## Curva 4: para native com O3, xsmid e pgo
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_pgo_NU"     "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI $N_UNROLL"    ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_pgo_Uauto"  "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_AUTO" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_pgo_maxU2"  "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max2" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_pgo_maxU4"  "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max4" ||   ERR=1
-    compilar_openmc "openmc_${CC}_native_O3_oti_xsmid_pgo_maxU8"  "off"   "on"    "on"    "-O3        $NATIVE_FLAGS $OTI $UNROLL_max8" ||   ERR=1
 
     if [ $ERR == "0" ]; then
         echo "=========================================="
@@ -532,8 +482,6 @@ function compilar_casos_amd64() {
         echo "=========================================="
         return 1
     fi
-
-    #Aplicar Profile-Guided Optimization (PGO) no futuro
 }
 
 
@@ -695,101 +643,73 @@ function compilar_casos_rv64_k3() {
     else
         VEC_FIX="-mrvv-vector-bits=$VLEN"
     fi
-    #UNROLL
-    N_UNROLL="-fno-unroll-loops"
-    UNROLL_AUTO="-funroll-loops"
-    UNROLL_max2="-funroll-loops --param=max-unroll-times=2"
-    UNROLL_max4="-funroll-loops --param=max-unroll-times=4"
-    UNROLL_max8="-funroll-loops --param=max-unroll-times=8"
+    
+    #Diagnosticado que unroll é irrelevante para o OpenMC
+    #N_UNROLL="-fno-unroll-loops"
+    #UNROLL_AUTO="-funroll-loops"
+    #UNROLL_max2="-funroll-loops --param=max-unroll-times=2"
+    #UNROLL_max4="-funroll-loops --param=max-unroll-times=4"
+    #UNROLL_max8="-funroll-loops --param=max-unroll-times=8"
 
     ERR=0
-    ############### Nome do binário                                 MPI     XSIMD   PGO     FLAGS
+    ############### Nome do binário                                 MPI     PGO     FLAGS
 
     # Builds escalares
-    compilar_openmc "openmc_${CORE}_${CC}_O0"                             "off"   "off"   "off"   "-O0                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_O1"                             "off"   "off"   "off"   "-O1                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_O2"                             "off"   "off"   "off"   "-O2                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_O3"                             "off"   "off"   "off"   "-O3                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_O3_oti"                         "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
-    if [ "$CC" == "clang" ]; then
-        compilar_openmc "openmc_${CORE}_${CC}_O3_oti_xsimd"               "off"   "on"    "off"   "-O3    $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
-    fi
+    compilar_openmc "openmc_${CORE}_${CC}_O0"                             "off"   "off"   "-O0                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_O1"                             "off"   "off"   "-O1                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_O2"                             "off"   "off"   "-O2                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_O3"                             "off"   "off"   "-O3                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_O3_oti"                         "off"   "off"   "-O3    $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
 
     # Builds vetoriais vlen=automático com otimizações extras
-    compilar_openmc "openmc_${CORE}_${CC}_v_O0"                           "off"   "off"   "off"   "-O0                       ${ISA_BASE_V}"  || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_v_O1"                           "off"   "off"   "off"   "-O1                       ${ISA_BASE_V}"  || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_v_O2"                           "off"   "off"   "off"   "-O2                       ${ISA_BASE_V}"  || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_v_O3"                           "off"   "off"   "off"   "-O3                       ${ISA_BASE_V}"  || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_v_O3_oti"                       "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}"  || ERR=1
-    if [ "$CC" == "clang" ]; then
-        compilar_openmc "openmc_${CORE}_${CC}_v_O3_ot_xsimd"              "off"   "on"    "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}"  || ERR=1
-    fi
-    
+    compilar_openmc "openmc_${CORE}_${CC}_v_O0"                           "off"   "off"   "-O0                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_v_O1"                           "off"   "off"   "-O1                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_v_O2"                           "off"   "off"   "-O2                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_v_O3"                           "off"   "off"   "-O3                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_v_O3_oti"                       "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}"  || ERR=1
+
     # Builds vetoriais com vlen fixo
-    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O0"                 "off"   "off"   "off"   "-O0                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O1"                 "off"   "off"   "off"   "-O1                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O2"                 "off"   "off"   "off"   "-O2                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3"                 "off"   "off"   "off"   "-O3                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti"             "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    if [ "$CC" == "clang" ]; then
-        compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti_xsimd"   "off"   "on"    "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    fi
-    
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O0"                 "off"   "off"   "-O0                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O1"                 "off"   "off"   "-O1                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O2"                 "off"   "off"   "-O2                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3"                 "off"   "off"   "-O3                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti"             "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+
 
 
     # Builds escalares + PGO
-    compilar_openmc "openmc_${CORE}_${CC}_O0_pgo"                             "off"   "off"   "on"   "-O0                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_O1_pgo"                             "off"   "off"   "on"   "-O1                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_O2_pgo"                             "off"   "off"   "on"   "-O2                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_O3_pgo"                             "off"   "off"   "on"   "-O3                        $ISA_BASE_noV" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_O3_oti_pgo"                         "off"   "off"   "on"   "-O3    $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
-    if [ "$CC" == "clang" ]; then
-        compilar_openmc "openmc_${CORE}_${CC}_O3_oti_pgo_xsimd"               "off"   "on"    "on"   "-O3    $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
-    fi
+    compilar_openmc "openmc_${CORE}_${CC}_O0_pgo"                             "off"   "on"    "-O0                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_O1_pgo"                             "off"   "on"    "-O1                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_O2_pgo"                             "off"   "on"    "-O2                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_O3_pgo"                             "off"   "on"    "-O3                        $ISA_BASE_noV" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_O3_oti_pgo"                         "off"   "on"    "-O3    $OTI $CACHE_PARAMS  $ISA_BASE_noV" || ERR=1
 
     # Builds vetoriais vlen=automático com otimizações extras + PGO
-    compilar_openmc "openmc_${CORE}_${CC}_v_O0_pgo"                           "off"   "off"   "on"   "-O0                       ${ISA_BASE_V}"  || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_v_O1_pgo"                           "off"   "off"   "on"   "-O1                       ${ISA_BASE_V}"  || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_v_O2_pgo"                           "off"   "off"   "on"   "-O2                       ${ISA_BASE_V}"  || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_v_O3_pgo"                           "off"   "off"   "on"   "-O3                       ${ISA_BASE_V}"  || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_v_O3_oti_pgo"                       "off"   "off"   "on"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}"  || ERR=1
-    if [ "$CC" == "clang" ]; then
-        compilar_openmc "openmc_${CORE}_${CC}_v_O3_oti_pgo_xsimd"             "off"   "on"    "on"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}"  || ERR=1
-    fi
-    
+    compilar_openmc "openmc_${CORE}_${CC}_v_O0_pgo"                           "off"   "on"    "-O0                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_v_O1_pgo"                           "off"   "on"    "-O1                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_v_O2_pgo"                           "off"   "on"    "-O2                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_v_O3_pgo"                           "off"   "on"    "-O3                       ${ISA_BASE_V}"  || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_v_O3_oti_pgo"                       "off"   "on"    "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}"  || ERR=1
+
     # Builds vetoriais com vlen fixo + PGO
-    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O0_pgo"                 "off"   "off"   "on"   "-O0                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O1_pgo"                 "off"   "off"   "on"   "-O1                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O2_pgo"                 "off"   "off"   "on"   "-O2                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_pgo"                 "off"   "off"   "on"   "-O3                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti_pgo"             "off"   "off"   "on"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
-    if [ "$CC" == "clang" ]; then
-        compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti_pgo_xsimd"   "off"   "on"    "on"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O0_pgo"                 "off"   "on"    "-O0                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O1_pgo"                 "off"   "on"    "-O1                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O2_pgo"                 "off"   "on"    "-O2                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_pgo"                 "off"   "on"    "-O3                       ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti_pgo"             "off"   "on"    "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX" || ERR=1
+    
+    
+    # Builds vetoriais vlen=min com otimizações extras
+    VLEN=128
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}min_O3_oti"          "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
+    VLEN=256
+    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}min_O3_oti"          "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
+    if [ "$CORE" == "A100" ]; then
+        VLEN=512
+        compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}min_O3_oti"      "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
+        VLEN=1024
+        compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}min_O3_oti"      "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
     fi
-    
-    
-
-
-
-
-    # Builds vetoriais com vlen fixo, otimizações extras e casos unroll
-    #compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti_NU"          "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $N_UNROLL" || ERR=1
-    #compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti_Uauto"       "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_AUTO" || ERR=1
-    #compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti_maxU2"       "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_max2" || ERR=1
-    #compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti_maxU4"       "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_max4" || ERR=1
-    #compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}_O3_oti_maxU8"       "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b  $VEC_FIX   $UNROLL_max8" || ERR=1
-
-    # Builds vetoriais vlen=automático com otimizações extras
-    #VLEN=128
-    #compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}min_O3_oti"          "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
-    #VLEN=256
-    #compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}min_O3_oti"          "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
-    #if [ "$CORE" == "A100" ]; then
-    #    VLEN=512
-    #    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}min_O3_oti"      "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
-    #    VLEN=1024
-    #    compilar_openmc "openmc_${CORE}_${CC}_vlen${VLEN}min_O3_oti"      "off"   "off"   "off"   "-O3    $OTI $CACHE_PARAMS ${ISA_BASE_V}_zvl${VLEN}b"       || ERR=1
-    #fi
 
 
     if [ $ERR == "0" ]; then
@@ -833,29 +753,20 @@ if [ "$DO_COMPILE" = true ]; then
         exit 1
     fi
 
-    # --- LOOP INFINITO DE TENTATIVAS ---
-    TENTATIVA=1
-    while true; do
-        echo "=========================================="
-        echo "TENTATIVA DE COMPILAÇÃO #$TENTATIVA"
-        echo "Modo: $FUNCAO_COMPILACAO"
-        echo "=========================================="
+    echo "=========================================="
+    echo "INICIANDO COMPILAÇÃO"
+    echo "Modo: $FUNCAO_COMPILACAO"
+    echo "=========================================="
 
-        # Executa a função definida na variável $FUNCAO_COMPILACAO
-        if $FUNCAO_COMPILACAO; then
-            echo "##########################################"
-            echo "✅ SUCESSO TOTAL NA TENTATIVA #$TENTATIVA"
-            echo "##########################################"
-            exit 0
-        else
-            echo "❌ Falha na tentativa #$TENTATIVA."
-            echo "Aguardando 5 segundos antes de tentar novamente..."
-            sleep 5 
-            
-            ((TENTATIVA++))
-        fi
-    done
-    exit 0
+    if $FUNCAO_COMPILACAO; then
+        echo "##########################################"
+        echo "✅ SUCESSO TOTAL"
+        echo "##########################################"
+        exit 0
+    else
+        echo "❌ Falha na compilação de um ou mais casos."
+        exit 1
+    fi
 fi
 
 
