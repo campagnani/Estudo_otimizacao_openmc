@@ -22,15 +22,21 @@ CXX=g++
 DO_DEPS=false
 DO_CLONE=false
 DO_COMPILE=false
+DO_COMPILE_DEFAULT=false
+DO_COMPILE_CONDA=false
+DO_COMPILE_CAUSAL=false
+DO_COMPILE_FATORIAL=false
+DO_COMPILE_NOVAS=false
 DO_INSTALL=false
 DO_CLEAN=false
 DO_RUN=false
 DO_RUN_BUILD=false
+SAW_CORES=false
 
 # --- PARSING
 # Enquanto houver argumentos ($# maior que 0)
 while [[ "$#" -gt 0 ]]; do
-    case $1 in
+    case "$1" in
         --deps)
             DO_DEPS=true
             ;;
@@ -40,29 +46,45 @@ while [[ "$#" -gt 0 ]]; do
         --compile)
             DO_COMPILE=true
             ;;
-            --cores)
-                # Verifica se o próximo argumento existe e é um número
-                if [[ -n "$2" && "$2" =~ ^[0-9]+$ ]]; then
-                    MAKE_CORES="$2"
-                    shift # Remove o valor do número da fila de argumentos
-                else
-                    echo "Erro: O argumento --cores requer um número inteiro."
-                    exit 1
-                fi
-                ;;
-            --X100)
-                CORE=X100
-                ;;
-            --A100)
-                CORE=A100
-                ;;
-            --install)
-                DO_INSTALL=true
-                ;;
-            --clang)
-                CC=clang
-                CXX=clang++
-                ;;
+        --compile-default)
+            DO_COMPILE_DEFAULT=true
+            ;;
+        --compile-conda)
+            DO_COMPILE_CONDA=true
+            ;;
+        --compile-causal)
+            DO_COMPILE_CAUSAL=true
+            ;;
+        --compile-fatorial)
+            DO_COMPILE_FATORIAL=true
+            ;;
+        --compile-novas)
+            DO_COMPILE_NOVAS=true
+            ;;
+        --cores)
+            # Subparâmetro de qualquer modo de compilação.
+            if [[ -n "$2" && "$2" =~ ^[0-9]+$ ]]; then
+                MAKE_CORES="$2"
+                SAW_CORES=true
+                shift
+            else
+                echo "Erro: --cores exige um número inteiro (ex.: --cores 8)."
+                exit 1
+            fi
+            ;;
+        --X100)
+            CORE=X100
+            ;;
+        --A100)
+            CORE=A100
+            ;;
+        --install)
+            DO_INSTALL=true
+            ;;
+        --clang)
+            CC=clang
+            CXX=clang++
+            ;;
         --clean)
             DO_CLEAN=true
             ;;
@@ -88,6 +110,17 @@ Opções Disponíveis:
        --X100         Define manualmente a otimização para o X100.
        --install      Ativa a instalação após a compilação.
        --clang        Muda o compilador de GCC para Clang
+  --compile-default  Compila só o CMake Release default (sem flags extras) e sai.
+  --compile-conda    Baixa o OpenMC 0.16.0 pré-compilado do conda-forge (nodagmc, sem MPI)
+                     e deixa em openmc/build_openmc_conda/ como se tivesse sido compilado.
+  --compile-causal   Compila Generic O3 + -fno-plt, e Generic O3 + flags conda-forge (fno-plt,
+                     function-sections, gc-sections, mtune=haswell), para isolar o ganho do conda.
+  --compile-fatorial Fatorial Native O3+NDEBUG: 3 flags de linker (2^3) e 5 de math (2^5), ± PGO.
+  --compile-novas    A/B em cima de Native O3 oti: -fno-stack-protector, -fno-PIE,
+                     gc-sections; no Clang também ThinLTO+lld e -ffp-contract=fast. ± PGO.
+       --cores N      Define manualmente o número de núcleos para o 'make'.
+       --clang        Muda o compilador de GCC para Clang
+
   --run        Roda os casos instalados e saí.
   --run-build  Roda os casos da pasta build e saí.
   --clean      Remove os diretórios de build (openmc/build*) existentes e saí.
@@ -103,6 +136,44 @@ EOF
     esac
     shift # Remove o argumento atual e passa para o próximo
 done
+
+# --- Validação das combinações ---
+N_COMPILE_MODES=0
+[ "$DO_COMPILE" = true ] && N_COMPILE_MODES=$((N_COMPILE_MODES + 1))
+[ "$DO_COMPILE_DEFAULT" = true ] && N_COMPILE_MODES=$((N_COMPILE_MODES + 1))
+[ "$DO_COMPILE_CONDA" = true ] && N_COMPILE_MODES=$((N_COMPILE_MODES + 1))
+[ "$DO_COMPILE_CAUSAL" = true ] && N_COMPILE_MODES=$((N_COMPILE_MODES + 1))
+[ "$DO_COMPILE_FATORIAL" = true ] && N_COMPILE_MODES=$((N_COMPILE_MODES + 1))
+[ "$DO_COMPILE_NOVAS" = true ] && N_COMPILE_MODES=$((N_COMPILE_MODES + 1))
+if [ "$N_COMPILE_MODES" -gt 1 ]; then
+    echo "Erro: use só um modo de compilação (--compile, --compile-default, --compile-conda, --compile-causal, --compile-fatorial ou --compile-novas)."
+    exit 1
+fi
+
+if [ "$DO_RUN" = true ] && [ "$DO_RUN_BUILD" = true ]; then
+    echo "Erro: use --run ou --run-build, não os dois."
+    exit 1
+fi
+
+if [ -n "$CORE" ] && [ "$DO_COMPILE" != true ]; then
+    echo "Erro: --A100 e --X100 só valem com --compile (perfil RISC-V K3)."
+    exit 1
+fi
+
+if [ "$DO_INSTALL" = true ] && [ "$DO_COMPILE" != true ] && [ "$DO_COMPILE_DEFAULT" != true ]; then
+    echo "Erro: --install só vale com --compile ou --compile-default."
+    exit 1
+fi
+
+if [ "$CC" = "clang" ] && [ "$N_COMPILE_MODES" -eq 0 ]; then
+    echo "Erro: --clang só vale com um modo de compilação."
+    exit 1
+fi
+
+if [ "$SAW_CORES" = true ] && [ "$N_COMPILE_MODES" -eq 0 ]; then
+    echo "Erro: --cores só vale com um modo de compilação."
+    exit 1
+fi
 
 
 
@@ -245,11 +316,17 @@ function compilar_openmc() {
             cd ..
             return 1
         fi
+        if [ "$CC" != "gcc" ]; then
+            # %m: um .profraw por processo/módulo (OpenMP).
+            export LLVM_PROFILE_FILE="$(pwd)/default-%m.profraw"
+        fi
         if ! ./bin/openmc; then
             echo "❌ ERRO CRÍTICO: OpenMC falhou na simulação de perfil PGO."
+            unset LLVM_PROFILE_FILE
             cd ..
             return 1
         fi
+        unset LLVM_PROFILE_FILE
 
         echo "🧹 [PGO] Limpando binários para forçar recompilação..."
         make clean
@@ -275,7 +352,7 @@ function compilar_openmc() {
             echo "--- llvm-profdata: $PROFDATA_TOOL ---"
 
             shopt -s nullglob
-            PROFRAW_FILES=( default*.profraw )
+            PROFRAW_FILES=( ./*.profraw )
             shopt -u nullglob
             if [ ${#PROFRAW_FILES[@]} -eq 0 ]; then
                 echo "❌ ERRO: Nenhum arquivo .profraw encontrado após a simulação PGO."
@@ -283,13 +360,16 @@ function compilar_openmc() {
                 return 1
             fi
 
-            if ! $PROFDATA_TOOL merge -output=default.profdata "${PROFRAW_FILES[@]}"; then
+            # Caminho absoluto: o Make do CMake entra em vendor/fmt etc. e o
+            # Clang resolve -fprofile-use= relativamente ao cwd de cada compile.
+            PROFDATA_ABS="$(pwd)/default.profdata"
+            if ! $PROFDATA_TOOL merge -output="$PROFDATA_ABS" "${PROFRAW_FILES[@]}"; then
                 echo "❌ ERRO: Falha ao converter o perfil do Clang."
                 cd ..
                 return 1
             fi
 
-            OPT_FLAGS="$OPT_FLAGS -fprofile-use=default.profdata"
+            OPT_FLAGS="$OPT_FLAGS -fprofile-use=${PROFDATA_ABS}"
         fi
 
         echo "✅ [PGO] Perfil gerado. Configurando flags para recompilação: $OPT_FLAGS"
@@ -362,6 +442,239 @@ function compilar_openmc() {
 
 }
 
+
+# Default CMake Release: sem CMAKE_C/CXX_FLAGS. Só troca o compilador via $CC/$CXX.
+function compilar_openmc_default() {
+    echo "----------------------------------------INICIO"
+    local BUILD_NAME="openmc_${CC}_default"
+    local BUILD_DIR="build_$BUILD_NAME"
+
+    echo "--- Default Release (sem flags extras) ---"
+    echo "--- Compilador: $CC / $CXX ---"
+    echo "--- Pasta: $BUILD_NAME ---"
+
+    mkdir -p "$BUILD_DIR"
+    cd "$BUILD_DIR" || { echo "Falha ao entrar no diretório $BUILD_DIR"; return 1; }
+
+    local EXTRA_CMAKE_FLAGS="-DOPENMC_BUILD_TESTS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DGIT_SUBMODULE=OFF -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=FALSE"
+
+    echo "⚙️  Configurando CMake (BUILD_TYPE=Release)..."
+    if ! cmake -DCMAKE_C_COMPILER="$CC" \
+          -DCMAKE_CXX_COMPILER="$CXX" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DHDF5_PREFER_PARALLEL=off \
+          -DOPENMC_USE_MPI=off \
+          -DOPENMC_USE_OPENMP=on \
+          -DOPENMC_FORCE_VENDORED_LIBS=ON \
+          -DCMAKE_INSTALL_PREFIX="/opt/$BUILD_NAME" \
+          $EXTRA_CMAKE_FLAGS \
+          .. ; then
+        echo "❌ ERRO CRÍTICO: CMake falhou para $BUILD_NAME"
+        cd ..
+        return 1
+    fi
+
+    echo "🔨 Compilando default..."
+    if ! make -j "$MAKE_CORES"; then
+        echo "❌ ERRO CRÍTICO: Make falhou para $BUILD_NAME"
+        cd ..
+        return 1
+    fi
+
+    if [ "$DO_INSTALL" == true ]; then
+        echo "📦 Instalando..."
+        sudo make install
+        sudo mv "/opt/$BUILD_NAME/bin/openmc" "/opt/$BUILD_NAME/bin/$BUILD_NAME"
+        sudo ln -sf "/opt/$BUILD_NAME/bin/$BUILD_NAME" "/usr/local/bin/$BUILD_NAME"
+        if [ -f "/opt/$BUILD_NAME/lib/libopenmc.so" ]; then
+            sudo mv "/opt/$BUILD_NAME/lib/libopenmc.so" "/opt/$BUILD_NAME/lib/lib$BUILD_NAME.so"
+            sudo patchelf --replace-needed libopenmc.so lib$BUILD_NAME.so "/opt/$BUILD_NAME/bin/$BUILD_NAME"
+            sudo ln -sf "/opt/$BUILD_NAME/lib/lib$BUILD_NAME.so" "/usr/local/lib/lib$BUILD_NAME.so"
+        fi
+    fi
+
+    echo "--- Sucesso! Executável disponível como: $BUILD_NAME --- "
+    cd ..
+    echo "----------------------------------------FIM"
+}
+
+
+# Binário pré-compilado do conda-forge, no mesmo layout CMake:
+#   openmc/build_openmc_conda/bin/openmc
+# Variante: 0.16.0, sem DAGMC, sem MPI (igual aos builds locais).
+# Prefixo isolado: o --run-build acha o executável pelo glob build_*/bin/openmc.
+function baixar_openmc_conda() {
+    echo "----------------------------------------INICIO"
+    local BUILD_NAME="openmc_conda"
+    local BUILD_DIR="build_$BUILD_NAME"
+    local OPENMC_CONDA_VERSION="${OPENMC_CONDA_VERSION:-0.16.0}"
+    local SPEC="openmc=${OPENMC_CONDA_VERSION}=nodagmc_nompi_*"
+    local ARCH_SYSTEM
+    ARCH_SYSTEM=$(uname -m)
+    local MM_ARCH=""
+
+    echo "--- OpenMC conda-forge (binário pré-compilado) ---"
+    echo "--- Spec: $SPEC ---"
+    echo "--- Pasta: $BUILD_DIR ---"
+
+    case "$ARCH_SYSTEM" in
+        x86_64)  MM_ARCH="linux-64" ;;
+        aarch64|arm64) MM_ARCH="linux-aarch64" ;;
+        *)
+            echo "❌ conda-forge/openmc não publica binário para '$ARCH_SYSTEM'."
+            echo "   Plataformas: linux-64, linux-aarch64, osx-64."
+            echo "----------------------------------------FIM"
+            return 1
+            ;;
+    esac
+
+    local ROOT
+    ROOT="$(pwd)/.mamba_root"
+    mkdir -p "$ROOT/bin"
+    export MAMBA_ROOT_PREFIX="$ROOT"
+
+    local MM=""
+    if command -v micromamba >/dev/null 2>&1; then
+        MM="$(command -v micromamba)"
+    elif command -v mamba >/dev/null 2>&1; then
+        MM="$(command -v mamba)"
+    elif command -v conda >/dev/null 2>&1; then
+        MM="$(command -v conda)"
+    else
+        echo "⚙️  micromamba/mamba/conda não encontrado. Baixando micromamba ($MM_ARCH)..."
+        MM="$ROOT/bin/micromamba"
+        if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+            echo "❌ Precisa de curl ou wget para baixar o micromamba."
+            echo "----------------------------------------FIM"
+            return 1
+        fi
+        if command -v curl >/dev/null 2>&1; then
+            if ! curl -fsSL "https://micro.mamba.pm/api/micromamba/${MM_ARCH}/latest" \
+                    | tar -xj -C "$ROOT/bin" --strip-components=1 bin/micromamba; then
+                echo "❌ Falha ao baixar/extrair o micromamba."
+                echo "----------------------------------------FIM"
+                return 1
+            fi
+        else
+            if ! wget -qO- "https://micro.mamba.pm/api/micromamba/${MM_ARCH}/latest" \
+                    | tar -xj -C "$ROOT/bin" --strip-components=1 bin/micromamba; then
+                echo "❌ Falha ao baixar/extrair o micromamba."
+                echo "----------------------------------------FIM"
+                return 1
+            fi
+        fi
+        chmod +x "$MM"
+    fi
+
+    echo "--- Instalador: $MM ---"
+    rm -rf "$BUILD_DIR"
+    local PREFIX
+    PREFIX="$(pwd)/$BUILD_DIR"
+
+    echo "📦 Criando prefixo $BUILD_DIR a partir do conda-forge..."
+    if ! "$MM" create -y -p "$PREFIX" -c conda-forge --override-channels "$SPEC"; then
+        echo "❌ Falha ao instalar $SPEC do conda-forge."
+        echo "----------------------------------------FIM"
+        return 1
+    fi
+
+    if [ ! -x "$PREFIX/bin/openmc" ]; then
+        echo "❌ Prefixo criado, mas $PREFIX/bin/openmc não existe."
+        echo "----------------------------------------FIM"
+        return 1
+    fi
+
+    echo "--- binário: $PREFIX/bin/openmc ---"
+    "$PREFIX/bin/openmc" --version 2>/dev/null || true
+    echo "--- Sucesso! Executável disponível como: $BUILD_NAME --- "
+    echo "----------------------------------------FIM"
+}
+
+
+# Isola o ganho do binário conda-forge: mesmo Generic O3 (x86-64, GCC local),
+# mudando só as flags de linking/tune que o conda-forge injeta por padrão.
+function compilar_casos_causal() {
+    echo "=========================================="
+    echo "ISOLAMENTO CAUSAL (flags conda-forge)"
+    echo "=========================================="
+    local GENERIC="-march=x86-64 -mtune=generic"
+    local ERR=0
+
+    # Controle já existe: openmc_${CC}_generic_O3  (~309 s)
+    # 1) só -fno-plt
+    compilar_openmc "openmc_${CC}_generic_O3_fnoplt" "off" "off" \
+        "-O3 ${GENERIC} -fno-plt" || ERR=1
+
+    # 2) pacote típico conda-forge (sem mudar ISA para nocona/SSE3)
+    compilar_openmc "openmc_${CC}_generic_O3_condaflags" "off" "off" \
+        "-O3 -march=x86-64 -mtune=haswell -fno-plt -ffunction-sections -Wl,--gc-sections" || ERR=1
+
+    return "$ERR"
+}
+
+
+# A/B de flags ainda não medidas em cima do Native O3 oti (controle já existe
+# como openmc_${CC}_native_O3_oti). Uma alteração por build, ± PGO.
+function teste_flags_novas_amd64() {
+    echo "=========================================="
+    echo "TESTE FLAGS NOVAS (sobre Native O3 oti)"
+    echo "Controle: openmc_${CC}_native_O3_oti (± PGO)"
+    echo "=========================================="
+
+    local NATIVE="-march=native -mtune=native"
+    local LINKER_OPTS="-flto=auto -fno-plt -fno-semantic-interposition"
+    local MATH_OPTS="-fno-math-errno -fno-trapping-math -fno-signaling-nans -fno-signed-zeros -freciprocal-math"
+    local GEN_OPTS="-DNDEBUG"
+    local OTI="${LINKER_OPTS} ${MATH_OPTS} ${GEN_OPTS}"
+    local BASE="-O3 ${NATIVE} ${OTI}"
+    local ERR=0
+
+    _caso_nova() {
+        local tag="$1"
+        local pgo="$2"
+        local flags="$3"
+        local name="openmc_${CC}_native_O3_oti_${tag}"
+        [ "$pgo" = "on" ] && name="${name}_pgo"
+        echo ">>> ${name}"
+        echo "    PGO=${pgo}  flags:${flags}"
+        compilar_openmc "$name" "off" "$pgo" "$flags" || ERR=1
+    }
+
+    # 1) Arch/GCC costuma ligar SSP mesmo em -O3
+    _caso_nova "nossesp" "off" "${BASE} -fno-stack-protector"
+    _caso_nova "nossesp" "on"  "${BASE} -fno-stack-protector"
+
+    # 2) Executável não-PIE
+    _caso_nova "nopie" "off" "${BASE} -fno-PIE -no-pie"
+    _caso_nova "nopie" "on"  "${BASE} -fno-PIE -no-pie"
+
+    # 3) gc-sections (pacote conda) agora em cima do oti, não no Generic
+    _caso_nova "gcsec" "off" "${BASE} -ffunction-sections -fdata-sections -Wl,--gc-sections"
+    _caso_nova "gcsec" "on"  "${BASE} -ffunction-sections -fdata-sections -Wl,--gc-sections"
+
+    if [ "$CC" = "clang" ]; then
+        # 4) ThinLTO + lld no lugar de -flto=auto; vtables só com LTO
+        local LINKER_THIN="-flto=thin -fuse-ld=lld -fno-plt -fno-semantic-interposition -fwhole-program-vtables"
+        local BASE_THIN="-O3 ${NATIVE} ${LINKER_THIN} ${MATH_OPTS} ${GEN_OPTS}"
+        _caso_nova "thinlto" "off" "${BASE_THIN}"
+        _caso_nova "thinlto" "on"  "${BASE_THIN}"
+
+        # 5) Contrair FMA de forma explícita (GCC -O3 native já faz)
+        _caso_nova "fpcontract" "off" "${BASE} -ffp-contract=fast"
+        _caso_nova "fpcontract" "on"  "${BASE} -ffp-contract=fast"
+    fi
+
+    if [ "$ERR" -eq 0 ]; then
+        echo "=========================================="
+        echo "🎉 TESTE FLAGS NOVAS CONCLUÍDO!"
+        echo "=========================================="
+        return 0
+    fi
+    echo "=========================================="
+    echo "⚠️ Alguns builds de flags novas deram erro!"
+    echo "=========================================="
+    return 1
+}
 
 
 function compilar_casos_amd64() {
@@ -455,22 +768,6 @@ function compilar_casos_amd64() {
     compilar_openmc "openmc_${CC}_native_Ofast_oti"               "off"   "off"   "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
     compilar_openmc "openmc_${CC}_native_Ofast_oti_pgo"           "off"   "on"    "-Ofast     $NATIVE_FLAGS $OTI"             ||   ERR=1
 
-
-    # Gráfico 2: Curva de tempo Vs. flag de otimização para arquitetura nativa comparando PGO ativo
-    ## Curva 1: ñ
-    #    "openmc_${CC}_generic_O0"
-    #    "openmc_${CC}_generic_O1"
-    #    "openmc_${CC}_generic_O2"
-    #    "openmc_${CC}_generic_O3"
-    #    "openmc_${CC}_generic_Ofast"
-
-    ## Curva 2: PGO ativo
-    #    "openmc_${CC}_native_O0_pgo"
-    #    "openmc_${CC}_native_O1_pgo"
-    #    "openmc_${CC}_native_O2_pgo"
-    #    "openmc_${CC}_native_O3_pgo"
-    #    "openmc_${CC}_native_Ofast_pgo"
-
     if [ $ERR == "0" ]; then
         echo "=========================================="
         echo "🎉 TODOS OS BUILDS CONCLUÍDOS!"
@@ -485,6 +782,78 @@ function compilar_casos_amd64() {
 }
 
 
+function compilar_fatorial_amd64() {
+
+    echo "=========================================="
+    echo "FATORIAL OTI: linker 2^3 e math 2^5, ± PGO"
+    echo "Base: -O3 -march=native -mtune=native -DNDEBUG"
+    echo "=========================================="
+
+    local BASE="-O3 -march=native -mtune=native -DNDEBUG"
+    local LINKER_TAGS=(flto fnoplt fnosi)
+    local LINKER_FLGS=("-flto=auto" "-fno-plt" "-fno-semantic-interposition")
+    local MATH_TAGS=(fnome fnotm fnosn fnosz frecp)
+    local MATH_FLGS=("-fno-math-errno" "-fno-trapping-math" "-fno-signaling-nans" "-fno-signed-zeros" "-freciprocal-math")
+
+    ERR=0
+
+    _caso() {
+        local tag="$1"
+        local extra="$2"
+        local pgo="$3"
+        local name="openmc_${CC}_native_O3"
+        [ -n "$tag" ] && name="${name}_${tag}"
+        [ "$pgo" = "on" ] && name="${name}_pgo"
+        echo ">>> ${name}"
+        echo "    PGO=${pgo}  flags:${BASE}${extra}"
+        compilar_openmc "$name" "off" "$pgo" "${BASE}${extra}" || ERR=1
+    }
+
+    # Itera o fatorial 2^n. start=1 pula o ponto 0 (baseline já compilado).
+    _fatorial() {
+        local -n _tags=$1
+        local -n _flgs=$2
+        local start=${3:-0}
+        local n=${#_tags[@]}
+        local max=$((1 << n))
+        local i j tag extra
+        for ((i = start; i < max; i++)); do
+            tag=""
+            extra=""
+            for ((j = 0; j < n; j++)); do
+                if ((i & (1 << j))); then
+                    [ -n "$tag" ] && tag="${tag}_"
+                    tag="${tag}${_tags[j]}"
+                    extra="${extra} ${_flgs[j]}"
+                fi
+            done
+            _caso "$tag" "$extra" "off"
+            _caso "$tag" "$extra" "on"
+        done
+    }
+
+    echo "--- Baseline (sem flags extras de linker/math) ---"
+    _caso "" "" "off"
+    _caso "" "" "on"
+
+    echo "--- Fatorial LINKER (2^3 − 1) × ±PGO ---"
+    _fatorial LINKER_TAGS LINKER_FLGS 1
+
+    echo "--- Fatorial MATH (2^5 − 1) × ±PGO ---"
+    _fatorial MATH_TAGS MATH_FLGS 1
+
+    if [ $ERR == "0" ]; then
+        echo "=========================================="
+        echo "🎉 TODOS OS BUILDS CONCLUÍDOS!"
+        echo "=========================================="
+        return 0
+    else
+        echo "=========================================="
+        echo "⚠️ Alguns builds deram erro!"
+        echo "=========================================="
+        return 1
+    fi
+}
 
 
 
@@ -654,6 +1023,8 @@ function compilar_casos_rv64_k3() {
     ERR=0
     ############### Nome do binário                                 MPI     PGO     FLAGS
 
+    compilar_openmc_default || ERR=1
+
     # Builds escalares
     compilar_openmc "openmc_${CORE}_${CC}_O0"                             "off"   "off"   "-O0                        $ISA_BASE_noV" || ERR=1
     compilar_openmc "openmc_${CORE}_${CC}_O1"                             "off"   "off"   "-O1                        $ISA_BASE_noV" || ERR=1
@@ -731,6 +1102,84 @@ function compilar_casos_rv64_k3() {
 
 
 
+# Fatorial linker/math Native O3 (--compile-fatorial)
+if [ "$DO_COMPILE_FATORIAL" = true ]; then
+    cd openmc || exit 1
+    echo "=========================================="
+    echo "COMPILANDO FATORIAL AMD64"
+    echo "=========================================="
+    if compilar_fatorial_amd64; then
+        echo "✅ Fatorial amd64 compilado."
+        exit 0
+    else
+        echo "❌ Falha no fatorial amd64."
+        exit 1
+    fi
+fi
+
+
+# Flags novas sobre Native O3 oti (--compile-novas)
+if [ "$DO_COMPILE_NOVAS" = true ]; then
+    cd openmc || exit 1
+    echo "=========================================="
+    echo "COMPILANDO FLAGS NOVAS AMD64"
+    echo "=========================================="
+    if teste_flags_novas_amd64; then
+        echo "✅ Flags novas amd64 compiladas."
+        exit 0
+    else
+        echo "❌ Falha nas flags novas amd64."
+        exit 1
+    fi
+fi
+
+
+# Isolamento causal das flags conda-forge (--compile-causal)
+if [ "$DO_COMPILE_CAUSAL" = true ]; then
+    cd openmc || exit 1
+    if compilar_casos_causal; then
+        echo "✅ Isolamento causal compilado."
+        exit 0
+    else
+        echo "❌ Falha no isolamento causal."
+        exit 1
+    fi
+fi
+
+
+# Baixar o binário conda-forge (--compile-conda)
+if [ "$DO_COMPILE_CONDA" = true ]; then
+    mkdir -p openmc
+    cd openmc || exit 1
+    echo "=========================================="
+    echo "BAIXANDO OPENMC DO CONDA-FORGE"
+    echo "=========================================="
+    if baixar_openmc_conda; then
+        echo "✅ Conda-forge instalado em openmc/build_openmc_conda/"
+        exit 0
+    else
+        echo "❌ Falha ao baixar o OpenMC do conda-forge."
+        exit 1
+    fi
+fi
+
+
+# Compilar apenas o Release default (--compile-default)
+if [ "$DO_COMPILE_DEFAULT" = true ]; then
+    cd openmc || exit 1
+    echo "=========================================="
+    echo "COMPILANDO DEFAULT (CMAKE_BUILD_TYPE=Release)"
+    echo "=========================================="
+    if compilar_openmc_default; then
+        echo "✅ Default compilado."
+        exit 0
+    else
+        echo "❌ Falha na compilação default."
+        exit 1
+    fi
+fi
+
+
 # Compilar os diversos casos do openmc (--compile)
 if [ "$DO_COMPILE" = true ]; then
     cd openmc
@@ -772,7 +1221,7 @@ fi
 
 
 
-# Compilar os diversos casos do openmc (--run ou --run-build)
+# Executar os diversos casos do openmc (--run ou --run-build)
 if [ "$DO_RUN" = true ] || [ "$DO_RUN_BUILD" = true ]; then
     mkdir -p log
 
