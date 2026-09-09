@@ -48,6 +48,7 @@ ROTULOS = {
     "gcsec": "gc-sections",
     "thinlto": "ThinLTO",
     "fpcontract": "fp-contract",
+    "todas": "todas",
     "pgo": "pgo",
     "flto": "LTO",
     "fnoplt": "fno-plt",

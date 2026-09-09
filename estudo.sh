@@ -117,7 +117,8 @@ Opções Disponíveis:
                      function-sections, gc-sections, mtune=haswell), para isolar o ganho do conda.
   --compile-fatorial Fatorial Native O3+NDEBUG: 3 flags de linker (2^3) e 5 de math (2^5), ± PGO.
   --compile-novas    A/B em cima de Native O3 oti: -fno-stack-protector, -fno-PIE,
-                     gc-sections; no Clang também ThinLTO+lld e -ffp-contract=fast. ± PGO.
+                     gc-sections; no Clang também ThinLTO+lld e -ffp-contract=fast;
+                     depois o pacote todas juntas. ± PGO.
        --cores N      Define manualmente o número de núcleos para o 'make'.
        --clang        Muda o compilador de GCC para Clang
 
@@ -663,6 +664,17 @@ function teste_flags_novas_amd64() {
         _caso_nova "fpcontract" "off" "${BASE} -ffp-contract=fast"
         _caso_nova "fpcontract" "on"  "${BASE} -ffp-contract=fast"
     fi
+
+    # 6) Todas as flags novas juntas (± PGO). No GCC omite -no-pie:
+    #    o link da libopenmc.so falha com -fno-PIE/-no-pie.
+    local TODAS_COMUM="-fno-stack-protector -ffunction-sections -fdata-sections -Wl,--gc-sections"
+    if [ "$CC" = "clang" ]; then
+        local TODAS="${BASE_THIN} ${TODAS_COMUM} -fno-PIE -no-pie -ffp-contract=fast"
+    else
+        local TODAS="${BASE} ${TODAS_COMUM}"
+    fi
+    _caso_nova "todas" "off" "${TODAS}"
+    _caso_nova "todas" "on"  "${TODAS}"
 
     if [ "$ERR" -eq 0 ]; then
         echo "=========================================="
